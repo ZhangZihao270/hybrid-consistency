@@ -157,6 +157,7 @@ pub open spec fn operation_t<X,A,K,V,D,R,I,E>(s: System<X,A,K,D,R,I,E>, o: Objec
     }
 }
 
+
 // A record-independent selector satisfies the law even if both genuine
 // windows have weak sources, records change, and ordinary service returns.
 pub proof fn independent_service_satisfies_t<X,A,K,V,D,R,I,E>(s: System<X,A,K,D,R,I,E>, o: Object<K,V,D>)

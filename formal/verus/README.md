@@ -36,13 +36,4 @@ Use Verus `0.2026.08.02.b677dd5` with Rust toolchain
 ./verify.sh
 ```
 
-To check the main proof and its dependencies with `--no-cheating`:
-
-```sh
-verus --crate-type lib --no-cheating \
-  --verify-module async_weak --verify-module background_replication \
-  --verify-module weak_round --verify-module weak_visibility --verify-module weak_construction \
-  --verify-module prepared_service --verify-module prepared_hot --verify-module async_messages \
-  --verify-module async_fork --verify-module hybrid_majority --verify-module order_extension \
-  --verify-module operation_history --verify-module register_history hot.rs
-```
+The script verifies the entire crate with `--no-cheating`.

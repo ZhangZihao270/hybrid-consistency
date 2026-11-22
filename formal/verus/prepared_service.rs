@@ -52,34 +52,6 @@ pub open spec fn idle<S>(m:Program<S>,x:State<S>) -> bool {
         && (x.cfg.private)(Process::SecondClient)==(m.initial)(Process::SecondClient)
 }
 
-proof fn preparation_frame<S>(m:Program<S>,x:State<S>,s:Seq<Event>)
-    requires vis::weak_preparation(m,x,s), idle(m,x),
-    ensures ({
-        let y=asm::drive(m,x,s);
-        vis::replica_prefix(m,x,s) && asm::prefix(m,x,s,true) && idle(m,y)
-            && (replica_weak(x) ==> replica_weak(y)) && ordinary(y)==ordinary(x)
-            && (((x.cfg.net.locals)(Replica::R3)!=2 && (x.cfg.net.locals)(Replica::R3)!=5)
-                ==> ((y.cfg.net.locals)(Replica::R3)!=2 && (y.cfg.net.locals)(Replica::R3)!=5))
-    }),
-    decreases s.len(),
-{
-    if s.len()>0 {
-        let a=s[0]; let y=read::next(m,x,a); let t=s.drop_first();
-        assert(vis::before_candidate(x.cfg.net,a));
-        assert(process_step(x.cfg.net,a).actor is At);
-        if (x.cfg.net.locals)(Replica::R3)!=2 && (x.cfg.net.locals)(Replica::R3)!=5 {
-            assert((y.cfg.net.locals)(Replica::R3)!=2 && (y.cfg.net.locals)(Replica::R3)!=5);
-        }
-        assert(ordinary(y) =~= ordinary(x));
-        if replica_weak(x) {
-            assert forall|h:nat| fork::weak_packets(y).contains_key(h) implies (#[trigger] fork::weak_packets(y)[h]).to is At by {
-                if !(a is Send && a->Send_0==h) {assert(fork::weak_packets(x).get(h)==Some(fork::weak_packets(y)[h]));}
-            }
-        }
-        preparation_frame(m,y,t);
-    }
-}
-
 pub(crate) proof fn replica_frame<S>(m:Program<S>,x:State<S>,s:Seq<Event>)
     requires vis::replica_prefix(m,x,s),idle(m,x),replica_weak(x),
     ensures asm::prefix(m,x,s,true),idle(m,asm::drive(m,x,s)),replica_weak(asm::drive(m,x,s)),
@@ -118,55 +90,6 @@ pub proof fn weak_endpoint<S>(p:Program<S>,k:Headers,e:Exposure)
         let c=choose|c:crate::async_weak::Install<S>| #[trigger] crate::async_weak::installation(p,k,e,c);
         crate::async_weak::installation_frame(p,k,e,c);
     }
-}
-
-pub open spec fn selected_handle(c:vis::Cut,b:Fork) -> nat {
-    if b.branch==crate::Branch::Alpha {c.five} else {c.two}
-}
-
-pub open spec fn selected(c:vis::Cut,t:Seq<Event>,b:Fork) -> Exposure {
-    Exposure {arm:b,events:(c.pre+t)+seq![Action::Deliver(selected_handle(c,b))]}
-}
-
-// The previous constructions choose a concrete original copy at a reached
-// cut. Its one guarded installation gives a semantic exposure.
-pub(crate) proof fn from_ready_copy<S>(p:Program<S>,k:Headers,b:Fork,pre:Seq<Event>,h:nat)
-    requires ({
-        let m=net::implementation(k,p);let x=wc::start(m);let q=asm::drive(m,x,pre);
-        vis::weak_preparation(m,x,pre) && survivor(q.cfg.net)==(2int,5int) && wc::ready_copy(m,q,b,h)
-    }),
-    ensures ({
-        let m=net::implementation(k,p);let q=asm::drive(m,wc::start(m),pre);
-        let e=Exposure {arm:b,events:pre+seq![Action::Deliver(h)]};
-        exposed(p,k,e) && ordinary(endpoint(p,k,e)).is_empty()
-            && (q.cfg.net.locals)(Replica::R3)!=2 && (q.cfg.net.locals)(Replica::R3)!=5
-    }),
-{
-    let m=net::implementation(k,p);let x=wc::start(m);let q=asm::drive(m,x,pre);
-    let a=Action::Deliver(h);let d=seq![a];let y=read::next(m,q,a);
-    crate::isolated_rmws();
-    preparation_frame(m,x,pre);
-    assert(net::ready(p,k,q,Command::Deliver(h),false));
-    vis::weak_receipt(p,k,q,h);
-    assert(vis::replica_prefix(m,q,d)) by {reveal_with_fuel(vis::replica_prefix,2); reveal_with_fuel(asm::prefix,2);}
-    vis::join_replica_prefix(m,x,pre,d);
-    asm::prefix_concat(m,x,pre,d,true);
-    assert(ordinary(y) =~= ordinary(q)); assert(ordinary(x) =~= Map::empty());
-}
-
-pub proof fn from_installation<S>(p:Program<S>,k:Headers,b:Fork,c:vis::Cut,t:Seq<Event>)
-    requires vis::installation(p,k,b,c,t),
-    ensures ({
-        let e=selected(c,t,b); let m=net::implementation(k,p); let common=asm::drive(m,wc::start(m),c.pre);
-        exposed(p,k,e) && ordinary(endpoint(p,k,e)).is_empty() && forall|r:Replica| r!=Replica::R3 ==>
-            (#[trigger] (endpoint(p,k,e).cfg.private)(at(r)))==(common.cfg.private)(at(r))
-    }),
-{
-    let pre=c.pre+t;
-    let m=net::implementation(k,p);
-    vis::sends_only_preparation(m,wc::start(m),pre);
-    crate::isolated_rmws();
-    from_ready_copy(p,k,b,pre,selected_handle(c,b));
 }
 
 // The reference models one failure of the omitted replica after this

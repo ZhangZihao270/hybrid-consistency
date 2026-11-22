@@ -22,10 +22,6 @@ pub struct World {
     pub journal:spec_fn(Replica)->Map<Id,Receipt>,
 }
 pub enum Action { Send(nat,Request), Handle(nat), Receive(nat), Duplicate(nat,nat) }
-pub open spec fn fresh(s:World,q:Request) -> bool {
-    !s.issued.contains(q.id) && !s.answers.contains_key(q.id)
-        && !(s.journal)(q.site).contains_key(q.id)
-}
 pub open spec fn enabled(s:World,a:Action) -> bool {
     match a {
         Action::Send(slot,q)=>!s.wire.contains_key(slot) && !s.issued.contains(q.id) && !s.stopped.contains(q.id.0),
@@ -58,35 +54,6 @@ pub open spec fn step(f:CommandSemantics,s:World,a:Action) -> World {
         Action::Duplicate(i,j)=>World {wire:s.wire.insert(j,s.wire[i]),..s},
     }
 }
-pub open spec fn finish(f:CommandSemantics,s:World,i:nat,q:Request) -> World {
-    step(f,step(f,step(f,s,Action::Send(i,q)),Action::Handle(i)),Action::Receive(i))
-}
-// Existential one-RTT service for EVERY register method, any live replica
-// and nonfaulty requester. No assumption about agreement of replica states,
-// a weak status, an ordinary image, or background protocol progress.
-pub proof fn any_method_one_local_round(f:CommandSemantics,s:World,i:nat,q:Request)
-    requires fresh(s,q),!s.wire.contains_key(i),s.front.base.live.contains(q.site),!s.stopped.contains(q.id.0),
-    ensures ({
-        let sent=step(f,s,Action::Send(i,q));let handled=step(f,sent,Action::Handle(i));let u=finish(f,s,i,q);
-        let entry=evaluate(f,q,(s.front.base.disk)(q.site).value);
-        enabled(s,Action::Send(i,q)) && enabled(sent,Action::Handle(i)) && enabled(handled,Action::Receive(i))
-          && sent.wire[i]==Packet::Request(q) && handled.wire[i]==Packet::Reply(q.id,entry.response)
-          && u.wire==s.wire && (u.front.base.disk)(q.site).value==entry.after
-          && u.answers.get(q.id)==Some(entry.response) && (u.journal)(q.site).get(q.id)==Some(entry)
-          && u.front.calls==s.front.calls && u.front.closed==s.front.closed
-          && forall|r:Replica| r!=q.site ==> (#[trigger] (u.front.base.disk)(r))==(s.front.base.disk)(r)
-                && (u.journal)(r)==(s.journal)(r)
-    }),
-{
-    assert(finish(f,s,i,q).wire =~= s.wire);
-}
-pub proof fn delayed_duplicate_keeps_original_result(f:CommandSemantics,s:World,i:nat,q:Request)
-    requires enabled(s,Action::Handle(i)),s.wire[i]==Packet::Request(q),(s.journal)(q.site).contains_key(q.id),
-    ensures ({
-        let u=step(f,s,Action::Handle(i));
-        u.front==s.front && u.journal==s.journal && u.wire[i]==Packet::Reply(q.id,(s.journal)(q.site)[q.id].response)
-    }),
-{}
 
 // A bound on allocated network slots and per-client sequence numbers.
 // Ordinary/background service can change the shared state and liveness.
@@ -98,65 +65,6 @@ pub open spec fn bounded(s:World,n:nat) -> bool {
     && forall|i:nat| #[trigger] s.wire.contains_key(i) ==> i<n && match s.wire[i] {
         Packet::Request(q)=>q.id.1<n, Packet::Reply(id,_)=>id.1<n,
     }
-}
-pub open spec fn increment(a:Option<Action>) -> nat {
-    match a {Some(Action::Send(i,q))=>1+i+q.id.1,Some(Action::Duplicate(_,j))=>1+j,_=>0}
-}
-pub open spec fn ports_step(f:CommandSemantics,s:World,a:Option<Action>,u:World) -> bool {
-    match a {
-        Some(ev)=>enabled(s,ev) && u==step(f,s,ev),
-        None=>u==World {front:u.front,stopped:u.stopped,..s},
-    }
-}
-proof fn preserves_bound(f:CommandSemantics,s:World,a:Option<Action>,u:World,n:nat)
-    requires bounded(s,n),ports_step(f,s,a,u),
-    ensures bounded(u,n+increment(a)),
-{
-    if let Some(Action::Handle(i))=a {assert(s.wire.contains_key(i));}
-    if let Some(Action::Receive(i))=a {assert(s.wire.contains_key(i));}
-    if let Some(Action::Duplicate(i,_j))=a {assert(s.wire.contains_key(i));}
-    assert forall|id:Id| #[trigger] u.issued.contains(id) implies id.1<n+increment(a) by {
-        if s.issued.contains(id) {assert(id.1<n);}
-    }
-    assert forall|id:Id| #[trigger] u.answers.contains_key(id) implies id.1<n+increment(a) by {
-        if s.answers.contains_key(id) {assert(id.1<n);}
-    }
-    assert forall|i:nat| #[trigger] u.wire.contains_key(i) implies i<n+increment(a) && match u.wire[i] {
-        Packet::Request(q)=>q.id.1<n+increment(a),Packet::Reply(id,_)=>id.1<n+increment(a),
-    } by {if s.wire.contains_key(i) {assert(i<n);}}
-    assert forall|r:Replica,id:Id| #[trigger] (u.journal)(r).contains_key(id) implies id.1<n+increment(a) by {
-        if (s.journal)(r).contains_key(id) {assert(id.1<n);}
-    }
-}
-pub open spec fn bound(a:Seq<Option<Action>>,k:nat) -> nat decreases k {
-    if k==0 {0} else {bound(a,(k-1) as nat)+increment(a[k-1])}
-}
-proof fn allocation_after_prefix(f:CommandSemantics,t:Seq<World>,a:Seq<Option<Action>>,k:nat)
-    requires t.len()==a.len()+1,k<=a.len(),bounded(t[0],0),
-        forall|i:int| 0<=i<a.len() ==> ports_step(f,t[i],#[trigger] a[i],t[i+1]),
-    ensures bounded(t[k as int],bound(a,k)),
-    decreases k,
-{
-    if k>0 {
-        let j=(k-1) as nat;allocation_after_prefix(f,t,a,j);
-        preserves_bound(f,t[j as int],a[j as int],t[k as int],bound(a,j));
-    }
-}
-pub proof fn local_round_after_any_prefix(f:CommandSemantics,t:Seq<World>,a:Seq<Option<Action>>,client:nat,r:Replica,method:Method)
-        -> (serial:nat)
-    requires t.len()==a.len()+1,bounded(t[0],0),t.last().front.base.live.contains(r),!t.last().stopped.contains(client),
-        forall|i:int| 0<=i<a.len() ==> ports_step(f,t[i],#[trigger] a[i],t[i+1]),
-    ensures ({
-        let s=t.last();let q=Request{id:(client,serial),site:r,method};let sent=step(f,s,Action::Send(serial,q));
-        let handled=step(f,sent,Action::Handle(serial));let u=finish(f,s,serial,q);
-        fresh(s,q) && enabled(s,Action::Send(serial,q)) && enabled(sent,Action::Handle(serial))
-          && enabled(handled,Action::Receive(serial)) && u.answers.get(q.id)==Some(evaluate(f,q,(s.front.base.disk)(r).value).response)
-          && u.wire==s.wire
-    }),
-{
-    allocation_after_prefix(f,t,a,a.len());let n=bound(a,a.len());let s=t.last();
-    let q=Request{id:(client,n),site:r,method};assert(!(s.journal)(r).contains_key(q.id));
-    any_method_one_local_round(f,s,n,q);n
 }
 pub open spec fn paper_ops() -> CommandSemantics {
     |code:nat,x:int| (if code==0 {x+1} else {5*x},x)
@@ -207,11 +115,4 @@ pub proof fn actual_overlap(b:Fork)
 pub open spec fn projection(entry:Receipt,w:Op) -> Record {
     Record {op:w,returned:entry.response,installed:entry.after}
 }
-// Once both weak clients have received their responses, this adapter can
-// only serve another application call if a client actually issues one.
-// The separate background data offers to R3 remain in the HOT transport.
-pub proof fn quiet_weak_ports(s:World,a:Action)
-    requires s.wire.is_empty(),!(a is Send),
-    ensures !enabled(s,a),
-{}
 }

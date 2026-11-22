@@ -33,20 +33,4 @@ pub open spec fn needs_class<S,A>(step:Relation<S,A>,done:spec_fn(S)->bool,start
     can_finish(step,done,start) && forall|p:Path<S,A>| #[trigger] first_return(step,done,start,p) ==> uses(p,effect)
 }
 
-// Candidate no-await clause. Removing just the independently identified
-// promotion actions must leave a possible response if one existed. Other
-// compulsory protocol actions must still be enabled on the witness.
-pub open spec fn no_await<S,A>(step:Relation<S,A>,done:spec_fn(S)->bool,admitted:spec_fn(S)->bool,effect:Relation<S,A>) -> bool {
-    forall|s:S| #[trigger] admitted(s) ==> !needs_class(step,done,s,effect)
-}
-
-pub proof fn extract_without_promotion<S,A>(step:Relation<S,A>,done:spec_fn(S)->bool,admitted:spec_fn(S)->bool,
-    effect:Relation<S,A>,s:S,witness:Path<S,A>) -> (p:Path<S,A>)
-    requires no_await(step,done,admitted,effect),admitted(s),first_return(step,done,s,witness),
-    ensures first_return(step,done,s,p),!uses(p,effect),
-{
-    assert(can_finish(step,done,s));
-    choose|p:Path<S,A>| #[trigger] first_return(step,done,s,p) && !uses(p,effect)
-}
-
 }
