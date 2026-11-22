@@ -1,9 +1,18 @@
 # Verus proof of the HOT counterexample
 
 This directory contains the machine-checked three-replica register model and the
-original two-execution HOT counterexample. The entry point is `hot.rs`;
+original two-execution HOT counterexample. The crate entry point is `hot.rs`;
 `async_weak.rs` contains the end-to-end theorem
 `original_hot_from_async_replication`.
+
+The remaining source files group the supporting modules by purpose:
+
+- `network.rs`: network, replica state, and message delivery.
+- `strong_model.rs`: strong-protocol and storage model.
+- `read_service.rs`: read invocation, quorum service, and progress.
+- `history.rs`: operation histories, ordering, and the functional T property.
+- `weak_replication.rs`: weak writes and their asynchronous propagation.
+- `fork_proof.rs`: construction of the two executions and their comparison.
 
 The theorem constructs two executions with independent clients. Two concurrent
 weak read-modify-writes both return 1 and write 2 and 5, respectively. The first

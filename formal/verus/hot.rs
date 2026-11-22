@@ -1,48 +1,10 @@
 use vstd::prelude::*;
-pub mod delivery;
-pub mod progress;
-pub mod guarantee;
-pub mod survivors;
-pub mod checkpoint;
-pub mod sr2;
-pub mod confirmation;
-pub mod ordered_store;
-pub mod stock_facade;
-pub mod facade_linear;
-pub mod facade_transport;
-pub mod ordered_round;
-pub mod facade_hybrid;
-pub mod promotion_wait;
-pub mod guarded_history;
-pub mod read_nonblocking;
-pub mod read_call;
-pub mod read_issue;
-pub mod independent_read;
-pub mod fair_read;
-pub mod early_crash;
-pub mod sr1_majorities;
-pub mod first_mailbox;
-pub mod first_schedule;
-pub mod first_splice;
-pub mod first_assembly;
-pub mod hybrid_majority;
-pub mod coupled_reads;
-pub mod information_flow;
-pub mod order_extension;
-pub mod independent_preparations;
-pub mod guarded_comparison;
-pub mod fork_information;
-pub mod fork_alternatives;
-pub mod read_recovery;
-pub mod weak_round;
-pub mod ordinary_service;
-pub mod finite_service;
-pub mod quorum_rpc;
-pub mod metadata_stock;
-pub mod metadata_pair;
-pub mod metadata_reader;
-pub mod precedence;
-pub mod protocol;
+include!("network.rs");
+include!("read_service.rs");
+include!("strong_model.rs");
+include!("history.rs");
+include!("weak_replication.rs");
+include!("fork_proof.rs");
 
 verus! {
 
@@ -275,17 +237,6 @@ pub proof fn recovered_order_cannot_keep_both_rmws(r: RecoveredOrder)
 
 }
 
-pub mod original_application;
-pub mod native_fork;
-pub mod async_messages;
-pub mod async_fork;
-pub mod semantic_promotion;
-pub mod operation_history;
-pub mod register_history;
-pub mod weak_construction;
-pub mod weak_visibility;
 
-pub mod prepared_service;
-pub mod prepared_hot;
 
 pub mod async_weak;
